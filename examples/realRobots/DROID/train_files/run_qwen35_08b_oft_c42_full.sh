@@ -7,6 +7,10 @@ cd "$ROOT"
 export PYTHONPATH="$ROOT"
 export HF_HOME="${HF_HOME:-/mnt/pfs/share/pretrained_model/.cache/huggingface}"
 export WANDB_MODE="${WANDB_MODE:-disabled}"
+WANDB_CREDENTIAL="${WANDB_CREDENTIAL:-/mnt/pfs/users/shentingrui/.credentials/wandb_api_trshen.txt}"
+if [[ -z "${WANDB_API_KEY:-}" && -s "$WANDB_CREDENTIAL" ]]; then
+  export WANDB_API_KEY="$(<"$WANDB_CREDENTIAL")"
+fi
 export NCCL_DEBUG="${NCCL_DEBUG:-WARN}"
 export TOKENIZERS_PARALLELISM=false
 

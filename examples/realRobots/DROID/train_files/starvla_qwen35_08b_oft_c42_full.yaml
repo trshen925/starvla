@@ -1,7 +1,7 @@
-run_id: qwen35_08b_oft_droid_c42_full
+run_id: qwen35_08b_oft_droid_c42_full_wandb
 run_root_dir: results/Checkpoints
 seed: 42
-wandb_entity: your_wandb_entity
+wandb_entity: trshen925-peking-university
 wandb_project: starvla_droid
 is_debug: false
 
