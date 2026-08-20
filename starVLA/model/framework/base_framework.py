@@ -68,6 +68,7 @@ def _auto_import_framework_modules(requested_framework: str | None = None) -> No
     # full discovery fallback for unknown/external frameworks.
     known_frameworks = {
         "QwenOFT": "starVLA.model.framework.VLM4A.QwenOFT",
+        "DiffusionPolicy": "starVLA.model.framework.VM4A.DiffusionPolicy",
     }
     if requested_framework in known_frameworks:
         importlib.import_module(known_frameworks[requested_framework])

@@ -1,0 +1,69 @@
+run_id: diffusion_policy_droid_c42_smoke
+run_root_dir: results/Checkpoints
+seed: 42
+wandb_entity: trshen925-peking-university
+wandb_project: starvla_droid
+is_debug: false
+
+framework:
+  name: DiffusionPolicy
+  action_encoding: joint_velocity
+  action_dim: 8
+  state_dim: 8
+  # The raw C42 loader returns one observation followed by 15 actions.
+  horizon: 15
+  n_obs_steps: 1
+  n_action_steps: 15
+  image_size: [224, 224]
+  image_keys: [front_rgb, wrist_rgb]
+  pretrained_backbone: true
+  num_inference_steps: 10
+  obs_as_global_cond: true
+  diffusion_step_embed_dim: 128
+  down_dims: [128, 256, 512]
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+  num_train_timesteps: 100
+
+datasets:
+  vla_data:
+    dataset_py: raw_droid_c42
+    data_mix: droid_c42_raw_dp_smoke
+    root: /mnt/pfs/data/fenghaoran/droid/decompressed/1.0.1
+    clip_mapping: /mnt/pfs/users/shentingrui/code/robo/video_gen/gen2act/gen2act/metadata/c42_c39_to_raw_droid_mapping.json
+    action_horizon: 15
+    views: [front, wrist]
+    include_state: true
+    per_device_batch_size: 8
+    num_workers: 4
+    persistent_workers: true
+    prefetch_factor: 2
+    pin_memory: true
+    parquet_cache_size: 8
+    obs_image_size: [224, 224]
+    max_samples: 4096
+
+trainer:
+  max_train_steps: 100
+  num_warmup_steps: 10
+  save_interval: 100
+  eval_interval: 1000000
+  learning_rate:
+    base: 1.0e-4
+    action_model: 1.0e-4
+  lr_scheduler_type: cosine_with_min_lr
+  scheduler_specific_kwargs:
+    min_lr: 1.0e-5
+  freeze_modules: ""
+  max_grad_norm: 1.0
+  weight_decay: 1.0e-6
+  logging_frequency: 10
+  gradient_clipping: 1.0
+  gradient_accumulation_steps: 1
+  optimizer:
+    name: AdamW
+    betas: [0.9, 0.95]
+    eps: 1.0e-08
+    weight_decay: 1.0e-06
+  save_format: pt
