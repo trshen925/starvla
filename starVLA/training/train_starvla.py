@@ -12,6 +12,7 @@ Conventions:
 
 # Standard Library
 import argparse
+import importlib.util
 import json
 import os
 import time
@@ -47,7 +48,10 @@ from starVLA.model.framework.share_tools import apply_config_compat
 from starVLA.training.trainer_utils.config_tracker import AccessTrackedConfig, wrap_config
 from starVLA.training.trainer_utils.trainer_tools import TrainerUtils, build_param_lr_groups, setup_optimizer_and_scheduler, normalize_dotlist_args
 
-deepspeed_plugin = DeepSpeedPlugin()
+# DeepSpeed is optional for small single-GPU experiments.  Keep the original
+# distributed path when it is installed, but do not make a local smoke run
+# depend on it.
+deepspeed_plugin = DeepSpeedPlugin() if importlib.util.find_spec("deepspeed") else None
 accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin)
 accelerator.print(accelerator.state)
 

@@ -17,11 +17,15 @@ from PIL import Image
 from torch.utils.data import Dataset
 
 try:
-    import av
     import pyarrow.parquet as pq
 except ImportError:  # pragma: no cover - clear runtime error on minimal installs
-    av = None
     pq = None
+
+try:
+    import av
+except ImportError:  # OpenCV fallback supports the raw DROID MP4s as well.
+    av = None
+    import cv2
 
 
 _OBS_JOINT = "steps/observation/joint_position"
@@ -56,8 +60,8 @@ class RawDroidC42Dataset(Dataset):
     """C42 raw DROID samples compatible with ``QwenOFT.forward(examples)``."""
 
     def __init__(self, data_cfg, mode: str = "train", **_: object) -> None:
-        if pq is None or av is None:
-            raise ImportError("raw_droid_c42 requires pyarrow and av; install starVLA requirements first")
+        if pq is None:
+            raise ImportError("raw_droid_c42 requires pyarrow; install starVLA requirements first")
         self.data_cfg = data_cfg
         self.mode = mode
         self.root = Path(str(data_cfg.root))
@@ -120,6 +124,16 @@ class RawDroidC42Dataset(Dataset):
         return payload
 
     def _frame(self, video_path: Path, index: int) -> Image.Image:
+        if av is None:
+            cap = cv2.VideoCapture(str(video_path))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, int(index))
+            ok, frame = cap.read()
+            cap.release()
+            if not ok:
+                raise RuntimeError(f"Unable to decode frame {index} from {video_path}")
+            return Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)).resize(
+                (self.image_size[1], self.image_size[0])
+            )
         # C42 requests one current observation from each stream. Decoding up to
         # the requested frame is slower than a cached reader, but robust across
         # the DROID MP4 encodings and keeps worker state pickle-safe.

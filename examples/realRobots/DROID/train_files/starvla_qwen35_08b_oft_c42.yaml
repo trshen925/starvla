@@ -20,6 +20,7 @@ framework:
 datasets:
   vla_data:
     dataset_py: raw_droid_c42
+    data_mix: droid_c42_raw_smoke
     root: /mnt/pfs/data/fenghaoran/droid/decompressed/1.0.1
     clip_mapping: /mnt/pfs/users/shentingrui/code/robo/video_gen/gen2act/gen2act/metadata/c42_c39_to_raw_droid_mapping.json
     action_horizon: 15

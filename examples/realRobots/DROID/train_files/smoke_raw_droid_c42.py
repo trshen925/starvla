@@ -2,8 +2,12 @@
 from __future__ import annotations
 
 import argparse
+from types import SimpleNamespace
 
-from omegaconf import OmegaConf
+try:
+    from omegaconf import OmegaConf
+except ImportError:
+    OmegaConf = None
 
 from starVLA.dataloader.raw_droid_c42 import RawDroidC42Dataset
 
@@ -15,12 +19,28 @@ def main() -> None:
         default="examples/realRobots/DROID/train_files/starvla_qwen35_08b_oft_c42.yaml",
     )
     args = parser.parse_args()
-    cfg = OmegaConf.load(args.config)
-    dataset = RawDroidC42Dataset(cfg.datasets.vla_data)
+    if OmegaConf is not None:
+        cfg = OmegaConf.load(args.config)
+        data_cfg = cfg.datasets.vla_data
+        horizon = int(cfg.framework.action_model.action_horizon)
+    else:
+        # The fallback deliberately has no YAML dependency, allowing a raw-data
+        # smoke test in a minimal DROID preprocessing environment.
+        data_cfg = {
+            "root": "/mnt/pfs/data/fenghaoran/droid/decompressed/1.0.1",
+            "clip_mapping": "/mnt/pfs/users/shentingrui/code/robo/video_gen/gen2act/gen2act/metadata/c42_c39_to_raw_droid_mapping.json",
+            "action_horizon": 15,
+            "views": ["front", "wrist"],
+            "obs_image_size": [224, 224],
+            "parquet_cache_size": 1,
+            "max_samples": 1,
+        }
+        horizon = 15
+    dataset = RawDroidC42Dataset(data_cfg)
     sample = dataset[0]
     assert len(sample["image"]) == 2
     assert sample["state"].shape == (1, 8)
-    assert sample["action"].shape == (int(cfg.framework.action_model.action_horizon), 8)
+    assert sample["action"].shape == (horizon, 8)
     print(
         "OK",
         f"samples={len(dataset)}",

@@ -57,9 +57,21 @@ def merge_config_overrides(model_config: dict, config_overrides: Sequence[str] |
         raise ValueError(f"Failed to parse config_overrides={overrides!r}: {exc}") from exc
 
 
-def _auto_import_framework_modules() -> None:
+def _auto_import_framework_modules(requested_framework: str | None = None) -> None:
     global _FRAMEWORKS_IMPORTED
     if _FRAMEWORKS_IMPORTED:
+        return
+
+    # Training one framework should not require importing every optional model
+    # family (some target different transformers releases).  Import the
+    # requested implementation directly when possible, retaining the legacy
+    # full discovery fallback for unknown/external frameworks.
+    known_frameworks = {
+        "QwenOFT": "starVLA.model.framework.VLM4A.QwenOFT",
+    }
+    if requested_framework in known_frameworks:
+        importlib.import_module(known_frameworks[requested_framework])
+        _FRAMEWORKS_IMPORTED = True
         return
 
     _SKIP = {"__init__", "base_framework", "share_tools"}
@@ -93,9 +105,8 @@ def build_framework(cfg): # The single entry point for building different model 
     if not hasattr(cfg, "framework") or not hasattr(cfg.framework, "name"):
         raise ValueError("Missing `cfg.framework.name`. The framework API now only accepts `framework.name`.")
 
-    _auto_import_framework_modules()
-
     framework_id = cfg.framework.name
+    _auto_import_framework_modules(framework_id)
     if framework_id not in FRAMEWORK_REGISTRY._registry:
         available = sorted(FRAMEWORK_REGISTRY._registry.keys())
         raise NotImplementedError(
