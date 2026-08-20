@@ -65,7 +65,7 @@ def build_dataloader(cfg, dataset_py="lerobot_datasets_oxe"): # TODO now here on
             vla_dataset.save_dataset_statistics(output_dir / "dataset_statistics.json")
         return vla_train_dataloader
     elif dataset_py == "raw_droid_c42":
-        from starVLA.dataloader.raw_droid_c42 import collate_fn, get_vla_dataset
+        from starVLA.dataloader.raw_droid_c42 import EpisodeLocalSampler, collate_fn, get_vla_dataset
 
         vla_dataset_cfg = cfg.datasets.vla_data
         vla_dataset = get_vla_dataset(data_cfg=vla_dataset_cfg, mode="train")
@@ -79,6 +79,12 @@ def build_dataloader(cfg, dataset_py="lerobot_datasets_oxe"): # TODO now here on
         if num_workers > 0:
             dataloader_kwargs["persistent_workers"] = bool(vla_dataset_cfg.get("persistent_workers", True))
             dataloader_kwargs["prefetch_factor"] = int(vla_dataset_cfg.get("prefetch_factor", 2))
+        if bool(vla_dataset_cfg.get("episode_local_sampler", False)):
+            dataloader_kwargs["sampler"] = EpisodeLocalSampler(
+                vla_dataset,
+                shuffle=bool(vla_dataset_cfg.get("shuffle", True)),
+                seed=int(getattr(cfg, "seed", 42)),
+            )
         return DataLoader(vla_dataset, **dataloader_kwargs)
     elif dataset_py == "vlm_datasets":
         vlm_data_module = make_vlm_dataloader(cfg)

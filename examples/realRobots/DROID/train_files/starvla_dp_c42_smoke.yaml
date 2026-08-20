@@ -44,6 +44,8 @@ datasets:
     parquet_cache_size: 8
     decoded_frame_cache_mb: 128
     decoded_frame_cache_block_frames: 32
+    episode_local_sampler: true
+    shuffle: true
     obs_image_size: [224, 224]
     max_samples: 4096
 

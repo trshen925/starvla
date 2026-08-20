@@ -9,12 +9,13 @@ directly and emits StarVLA's normal ``examples`` interface.
 from __future__ import annotations
 
 import json
+import random
 from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, Sampler
 
 try:
     import pyarrow.parquet as pq
@@ -245,6 +246,45 @@ class RawDroidC42Dataset(Dataset):
             "action": _q99_normalize(action, _ACTION_Q01, _ACTION_Q99),
             "robot_tag": "droid_joint_velocity",
         }
+
+
+class EpisodeLocalSampler(Sampler[int]):
+    """Shuffle episodes, but retain chronological C42 windows within each.
+
+    This is the raw-DROID locality strategy used by Gen2Act.  It deliberately
+    does not split by DDP rank: Accelerate shards its consecutive batches after
+    ``prepare()``, avoiding double sharding while keeping every rank in a
+    nearby region of an episode for most of an epoch.
+    """
+
+    def __init__(self, dataset: RawDroidC42Dataset, *, shuffle: bool = True, seed: int = 42) -> None:
+        self.dataset = dataset
+        self.shuffle = bool(shuffle)
+        self.seed = int(seed)
+        self.epoch = 0
+        groups: dict[str, list[int]] = {}
+        for index, (clip_id, local_start) in enumerate(dataset.samples):
+            clip = dataset.clips[clip_id]
+            episode = str(clip["raw_episode_id"])
+            absolute_start = int(clip["frame_range"][0]) + int(local_start)
+            groups.setdefault(episode, []).append((absolute_start, index))
+        self._groups = [
+            [index for _, index in sorted(entries)]
+            for _, entries in sorted(groups.items())
+        ]
+
+    def set_epoch(self, epoch: int) -> None:
+        self.epoch = int(epoch)
+
+    def __iter__(self):
+        order = list(range(len(self._groups)))
+        if self.shuffle:
+            random.Random(self.seed + self.epoch).shuffle(order)
+        for group_index in order:
+            yield from self._groups[group_index]
+
+    def __len__(self) -> int:
+        return len(self.dataset)
 
 
 def collate_fn(batch):
