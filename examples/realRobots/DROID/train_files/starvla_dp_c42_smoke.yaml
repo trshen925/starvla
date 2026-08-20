@@ -47,7 +47,8 @@ datasets:
     episode_local_sampler: true
     shuffle: true
     obs_image_size: [224, 224]
-    max_samples: 4096
+    # Keep the full mapping so episode-local sampling can reuse MP4 blocks.
+    max_samples: null
 
 trainer:
   max_train_steps: 100
