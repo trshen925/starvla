@@ -10,8 +10,9 @@ framework:
   action_encoding: joint_velocity
   action_dim: 8
   state_dim: 8
-  # The raw C42 loader returns one observation followed by 15 actions.
-  horizon: 15
+  # The DP U-Net requires a length divisible by 4. C42's 15th terminal
+  # target is duplicated to make the structural 16th position.
+  horizon: 16
   n_obs_steps: 1
   n_action_steps: 15
   image_size: [224, 224]

@@ -442,9 +442,17 @@ class DiffusionPolicy(baseframework):
                     f"DP action must have shape [T, {action_dim}], got {tuple(action_tensor.shape)}"
                 )
             if action_tensor.shape[0] < horizon:
-                raise ValueError(
-                    f"DP action horizon must be at least {horizon}, got {action_tensor.shape[0]}"
-                )
+                # The vendored 1-D U-Net downsamples twice and therefore
+                # requires a 16-step action sequence.  DROID C42 stores a
+                # 15-step control chunk; pad its terminal hold action for the
+                # structural token only.  Deployment can execute the first
+                # 15 predictions, so this never changes the real C42 target.
+                if action_tensor.shape[0] == horizon - 1:
+                    action_tensor = torch.cat([action_tensor, action_tensor[-1:].clone()], dim=0)
+                else:
+                    raise ValueError(
+                        f"DP action horizon must be at least {horizon}, got {action_tensor.shape[0]}"
+                    )
             # Take the immediate prefix (t .. t+horizon-1). Dataloaders whose action window
             # starts at the current step then always train DP on the actions that follow the
             # sampled observation, even if they provide a longer window (e.g. one shared with
