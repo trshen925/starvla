@@ -34,6 +34,7 @@ except ImportError:
 
 import wandb
 from accelerate import Accelerator, DeepSpeedPlugin
+from accelerate.utils import DistributedDataParallelKwargs
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
 from omegaconf import OmegaConf
@@ -52,7 +53,10 @@ from starVLA.training.trainer_utils.trainer_tools import TrainerUtils, build_par
 # distributed path when it is installed, but do not make a local smoke run
 # depend on it.
 deepspeed_plugin = DeepSpeedPlugin() if importlib.util.find_spec("deepspeed") else None
-accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin)
+# Some lightweight policies conditionally bypass small parameter branches.
+# DDP must explicitly tolerate these unused parameters between iterations.
+ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin, kwargs_handlers=[ddp_kwargs])
 accelerator.print(accelerator.state)
 
 # Sane Defaults
