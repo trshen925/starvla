@@ -89,7 +89,15 @@ class RawDroidC42Dataset(Dataset):
         self.image_size = tuple(int(value) for value in data_cfg.get("obs_image_size", [224, 224]))
         self.views = list(data_cfg.get("views", ["front", "wrist"]))
         self.cache_size = int(data_cfg.get("parquet_cache_size", 8))
+        # Per-worker decoded/resized RGB cache.  DROID windows are read in
+        # episode-local order, so caching short contiguous blocks prevents one
+        # full MP4 decode per requested frame.  Frames are cached *after*
+        # resize, keeping the cache compact (224px RGB rather than native).
+        self.frame_cache_mb = float(data_cfg.get("decoded_frame_cache_mb", 128))
+        self.frame_cache_block_frames = int(data_cfg.get("decoded_frame_cache_block_frames", 32))
         self._payload_cache: OrderedDict[str, dict[str, np.ndarray | str]] = OrderedDict()
+        self._frame_cache: OrderedDict[tuple[str, int], tuple[np.ndarray, int]] = OrderedDict()
+        self._frame_cache_bytes = 0
         print(f"[RawDroidC42Dataset] mode={mode} samples={len(self.samples)} clips={len(self.clips)}")
 
     def __len__(self) -> int:
@@ -98,6 +106,8 @@ class RawDroidC42Dataset(Dataset):
     def __getstate__(self):
         state = self.__dict__.copy()
         state["_payload_cache"] = OrderedDict()
+        state["_frame_cache"] = OrderedDict()
+        state["_frame_cache_bytes"] = 0
         return state
 
     def _payload(self, clip_id: str) -> dict[str, np.ndarray | str]:
@@ -124,6 +134,9 @@ class RawDroidC42Dataset(Dataset):
         return payload
 
     def _frame(self, video_path: Path, index: int) -> Image.Image:
+        cached = self._cached_frame_block(video_path, index)
+        if cached is not None:
+            return Image.fromarray(cached)
         if av is None:
             cap = cv2.VideoCapture(str(video_path))
             cap.set(cv2.CAP_PROP_POS_FRAMES, int(index))
@@ -146,6 +159,65 @@ class RawDroidC42Dataset(Dataset):
         if frame_array is None:
             raise RuntimeError(f"Unable to decode frame {index} from {video_path}")
         return Image.fromarray(frame_array).resize((self.image_size[1], self.image_size[0]))
+
+    def _cached_frame_block(self, video_path: Path, index: int) -> np.ndarray | None:
+        """Return a resized RGB frame from a compact per-worker block cache.
+
+        Random C42 windows otherwise reopen and decode an MP4 from frame zero
+        for every observation.  The loader is intentionally ordered by its
+        mapping, so adjacent windows normally share a 32-frame block.
+        """
+        budget = int(max(self.frame_cache_mb, 0.0) * 1024 * 1024)
+        block_size = self.frame_cache_block_frames
+        if budget <= 0 or block_size <= 0:
+            return None
+        block_id = int(index) // block_size
+        key = (str(video_path), block_id)
+        entry = self._frame_cache.get(key)
+        if entry is None:
+            start = block_id * block_size
+            frames: list[np.ndarray] = []
+            if av is None:
+                cap = cv2.VideoCapture(str(video_path))
+                cap.set(cv2.CAP_PROP_POS_FRAMES, start)
+                for _ in range(block_size):
+                    ok, frame = cap.read()
+                    if not ok:
+                        break
+                    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frames.append(np.asarray(Image.fromarray(rgb).resize((self.image_size[1], self.image_size[0]))))
+                cap.release()
+            else:
+                # Decode only until this block ends. Seeking can be inaccurate
+                # across DROID's H.264 keyframes, so preserve the robust
+                # sequential decoder used by the original loader.
+                stop = start + block_size
+                with av.open(str(video_path)) as container:
+                    for frame_idx, frame in enumerate(container.decode(video=0)):
+                        if frame_idx < start:
+                            continue
+                        if frame_idx >= stop:
+                            break
+                        rgb = frame.to_ndarray(format="rgb24")
+                        frames.append(np.asarray(Image.fromarray(rgb).resize((self.image_size[1], self.image_size[0]))))
+            if not frames:
+                return None
+            array = np.stack(frames, axis=0)
+            size = int(array.nbytes)
+            if size > budget:
+                return None
+            while self._frame_cache and self._frame_cache_bytes + size > budget:
+                _, (_, old_size) = self._frame_cache.popitem(last=False)
+                self._frame_cache_bytes -= old_size
+            self._frame_cache[key] = (array, size)
+            self._frame_cache_bytes += size
+            entry = (array, size)
+        else:
+            self._frame_cache.move_to_end(key)
+        offset = int(index) - block_id * block_size
+        if offset < 0 or offset >= len(entry[0]):
+            return None
+        return entry[0][offset]
 
     def __getitem__(self, index: int) -> dict:
         clip_id, local_start = self.samples[index]

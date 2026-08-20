@@ -36,12 +36,14 @@ datasets:
     action_horizon: 15
     views: [front, wrist]
     include_state: true
-    per_device_batch_size: 8
-    num_workers: 4
+    per_device_batch_size: 16
+    num_workers: 8
     persistent_workers: true
-    prefetch_factor: 2
+    prefetch_factor: 4
     pin_memory: true
     parquet_cache_size: 8
+    decoded_frame_cache_mb: 128
+    decoded_frame_cache_block_frames: 32
     obs_image_size: [224, 224]
     max_samples: 4096
 
