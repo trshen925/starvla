@@ -78,6 +78,15 @@ class _QWen3_5_VL_Interface(nn.Module):
         self.processor = processor
         self.config = config
 
+        if bool(qwenvl_config.get("enable_gradient_checkpointing", False)):
+            try:
+                self.model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+                if hasattr(self.model.config, "use_cache"):
+                    self.model.config.use_cache = False
+                print("[QWen3.5] gradient_checkpointing ENABLED (use_reentrant=False)", flush=True)
+            except Exception as exc:
+                print(f"[QWen3.5] failed to enable gradient_checkpointing: {exc}", flush=True)
+
         # alin qwen3.5 with qwen2.5
         self.model.config.hidden_size = self.model.config.text_config.hidden_size
 
