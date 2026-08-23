@@ -1,0 +1,84 @@
+# Original StarVLA VM4A Diffusion Policy on raw DROID in OXE-DROID semantics.
+# This is deliberately independent from the C42 joint-velocity recipe.
+run_id: diffusion_policy_oxe_droid_smoke
+run_root_dir: results/Checkpoints
+seed: 42
+wandb_entity: your_wandb_entity
+wandb_project: starvla_oxe_droid
+is_debug: false
+
+framework:
+  name: DiffusionPolicy
+  action_encoding: eef_delta
+  # OXE-DROID: delta XYZ (3), relative axis-angle (3), binary gripper (1).
+  action_dim: 7
+  # OXE-DROID: absolute XYZ (3), absolute rotation 6D (6), gripper (1).
+  state_dim: 10
+  horizon: 16
+  n_obs_steps: 1
+  n_action_steps: 8
+  image_size: [224, 224]
+  image_keys: [exterior_image_1, exterior_image_2, wrist_image]
+  pretrained_backbone: true
+  num_inference_steps: 10
+  obs_as_global_cond: true
+  diffusion_step_embed_dim: 128
+  down_dims: [128, 256, 512]
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+  num_train_timesteps: 100
+
+datasets:
+  vla_data:
+    dataset_py: raw_droid_oxe_dp
+    data_mix: raw_droid_oxe_dp
+    root: /mnt/pfs/data/fenghaoran/droid/decompressed/1.0.1
+    # Bypass a full directory scan in the smoke run. Remove this key for a
+    # full run, or provide your own explicit episode subset.
+    episode_ids: [episode_045924]
+    action_horizon: 16
+    per_device_batch_size: 8
+    num_workers: 8
+    persistent_workers: true
+    prefetch_factor: 4
+    pin_memory: true
+    parquet_cache_size: 8
+    decoded_frame_cache_mb: 128
+    decoded_frame_cache_block_frames: 32
+    # Performance-only settings inherited from the C42 loader design.  Each
+    # worker retains at most this many ffmpeg readers, each single-threaded,
+    # so concurrent workers do not exhaust the process/thread limit.
+    video_reader_cache: 8
+    ffmpeg_threads: 1
+    video_reader_retries: 3
+    video_reader_retry_delay: 0.25
+    episode_local_sampler: true
+    shuffle: true
+    obs_image_size: [224, 224]
+    # Smoke-only cap. Set null for every valid raw DROID 16-step window.
+    max_samples: 4096
+
+trainer:
+  max_train_steps: 100
+  num_warmup_steps: 10
+  save_interval: 100
+  eval_interval: 1000000
+  learning_rate:
+    base: 1.0e-4
+    action_model: 1.0e-4
+  lr_scheduler_type: cosine_with_min_lr
+  scheduler_specific_kwargs:
+    min_lr: 1.0e-5
+  freeze_modules: ""
+  max_grad_norm: 1.0
+  weight_decay: 1.0e-6
+  logging_frequency: 10
+  gradient_clipping: 1.0
+  gradient_accumulation_steps: 1
+  optimizer:
+    name: AdamW
+    betas: [0.9, 0.95]
+    eps: 1.0e-08
+    weight_decay: 1.0e-06
+  save_format: pt

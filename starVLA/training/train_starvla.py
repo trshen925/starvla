@@ -284,6 +284,18 @@ class VLATrainer(TrainerUtils):
             else:
                 raise ValueError(f"Unsupported save_format `{save_format}`. Expected `pt` or `safetensors`.")
 
+            keep_last = max(1, int(getattr(self.config.trainer, "keep_last_checkpoints", 2)))
+            suffix = "_model.safetensors" if save_format == "safetensors" else "_pytorch_model.pt"
+            checkpoints = []
+            for path in Path(self.checkpoint_dir).glob(f"steps_*{suffix}"):
+                try:
+                    step = int(path.name.split("_")[1])
+                except (IndexError, ValueError):
+                    continue
+                checkpoints.append((step, path))
+            for _, stale in sorted(checkpoints, key=lambda item: item[0], reverse=True)[keep_last:]:
+                stale.unlink(missing_ok=True)
+
             summary_data = {"steps": self.completed_steps}
             with open(os.path.join(self.config.output_dir, "summary.jsonl"), "a") as f:
                 f.write(json.dumps(summary_data) + "\n")
@@ -379,16 +391,42 @@ class VLATrainer(TrainerUtils):
         self._finalize_training()
 
     def eval_action_model(self, step_metrics: dict = None) -> float:
-        """Run simple action-eval on current batch and attach score to metrics."""
-        examples = self._get_next_batch()
+        """Run a small no-grad action eval and attach score to metrics."""
+        # The episode-local sampler keeps a batch near one episode. Take one
+        # representative window from successive batches to keep this eval
+        # bounded while covering roughly ``eval_num_episodes`` episodes.
+        limit = max(1, int(getattr(self.config.trainer, "eval_num_episodes", 10)))
+        examples = [self._get_next_batch()[0] for _ in range(limit)]
         actions = [example["action"] for example in examples]
-        output_dict = self.accelerator.unwrap_model(self.model).predict_action(
-            examples=examples, use_ddim=True, num_ddim_steps=20
-        )
+        eval_model = self.accelerator.unwrap_model(self.model)
+        was_training = eval_model.training
+        eval_model.eval()
+        with torch.no_grad():
+            output_dict = eval_model.predict_action(examples=examples, use_ddim=True, num_ddim_steps=10)
+        if was_training:
+            eval_model.train()
 
         if self.accelerator.is_main_process:
             normalized_actions = output_dict["normalized_actions"]
             actions = np.array(actions)
+            # ``predict_action`` returns the model's configured action chunk
+            # (8 for this run), while the raw OXE dataloader supplies a
+            # 16-step supervision window.  Training uses the trailing model
+            # horizon as its target, so evaluation must score that same slice.
+            # Keeping this shape check here also makes a future horizon change
+            # fail with an actionable error instead of a NumPy broadcast one.
+            if normalized_actions.ndim != actions.ndim or normalized_actions.shape[0] != actions.shape[0]:
+                raise ValueError(
+                    "Evaluation prediction/target batch shapes differ: "
+                    f"pred={normalized_actions.shape}, target={actions.shape}"
+                )
+            prediction_horizon = normalized_actions.shape[1]
+            if prediction_horizon > actions.shape[1]:
+                raise ValueError(
+                    "Evaluation prediction horizon exceeds target horizon: "
+                    f"pred={normalized_actions.shape}, target={actions.shape}"
+                )
+            actions = actions[:, -prediction_horizon:, ...]
             num_pots = np.prod(actions.shape)
             score = TrainerUtils.euclidean_distance(normalized_actions, actions)
             step_metrics["mse_score"] = score / num_pots

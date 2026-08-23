@@ -1,0 +1,97 @@
+# Native OXE-DROID Diffusion Policy trained on C42/C39's validated,
+# event-balanced raw-DROID clip index.  559,794 valid 16-step samples /
+# global batch 32 = 17,494 steps per epoch; 20 epochs = 349,880 steps.
+run_id: diffusion_policy_oxe_droid_c42_mapping_20ep
+run_root_dir: results/Checkpoints
+seed: 42
+wandb_entity: trshen925-peking-university
+wandb_project: starvla_droid
+is_debug: false
+
+framework:
+  name: DiffusionPolicy
+  action_encoding: eef_delta
+  action_dim: 7
+  state_dim: 10
+  horizon: 16
+  n_obs_steps: 1
+  n_action_steps: 8
+  image_size: [224, 224]
+  image_keys: [exterior_image_1, exterior_image_2, wrist_image]
+  pretrained_backbone: true
+  num_inference_steps: 10
+  obs_as_global_cond: true
+  diffusion_step_embed_dim: 128
+  down_dims: [128, 256, 512]
+  kernel_size: 5
+  n_groups: 8
+  cond_predict_scale: true
+  num_train_timesteps: 100
+  # C42 action-safe photometric augmentation only; no crop/flip/geometry changes.
+  augmentation:
+    enabled: true
+    p: 1.0
+    brightness: 0.1
+    contrast: 0.1
+    saturation: 0.05
+    noise_std: 0.01
+
+datasets:
+  vla_data:
+    dataset_py: raw_droid_oxe_dp
+    data_mix: raw_droid_oxe_dp_c42_mapping
+    root: /mnt/pfs/data/fenghaoran/droid/decompressed/1.0.1
+    clip_mapping: /mnt/pfs/users/shentingrui/code/robo/video_gen/gen2act/gen2act/metadata/c42_c39_to_raw_droid_mapping.json
+    # Existing Gen2Act raw-DROID absolute EEF bounds.  Keeping these explicit
+    # avoids a 25k-episode parquet scan at every fresh launch.
+    state_bounds:
+      position_min: [0.247230663895607, -0.568376362323761, -0.16521209478378296]
+      position_max: [0.8506479263305664, 0.5075082778930664, 0.8757533431053162]
+      gripper_min: [0.0]
+      gripper_max: [1.0]
+    action_horizon: 16
+    per_device_batch_size: 16
+    num_workers: 4
+    persistent_workers: true
+    prefetch_factor: 4
+    pin_memory: true
+    parquet_cache_size: 32
+    decoded_frame_cache_mb: 256
+    decoded_frame_cache_block_frames: 32
+    video_reader_cache: 4
+    ffmpeg_threads: 1
+    video_reader_retries: 4
+    video_reader_retry_delay: 0.5
+    episode_local_sampler: true
+    shuffle: true
+    obs_image_size: [224, 224]
+    max_samples: null
+
+trainer:
+  # 559,794 C42 windows / global batch 64 = 8,747 steps per epoch;
+  # 20 epochs = 174,940 optimizer steps.
+  max_train_steps: 174940
+  num_warmup_steps: 875
+  save_interval: 1000
+  keep_last_checkpoints: 2
+  eval_interval: 10000
+  eval_num_episodes: 10
+  is_resume: true
+  learning_rate:
+    base: 1.0e-4
+    action_model: 1.0e-4
+  lr_scheduler_type: cosine_with_min_lr
+  scheduler_specific_kwargs:
+    min_lr: 1.0e-5
+  freeze_modules: ""
+  max_grad_norm: 1.0
+  weight_decay: 1.0e-6
+  logging_frequency: 10
+  gradient_clipping: 1.0
+  gradient_accumulation_steps: 1
+  optimizer:
+    name: AdamW
+    betas: [0.9, 0.95]
+    eps: 1.0e-08
+    weight_decay: 1.0e-06
+  save_format: pt

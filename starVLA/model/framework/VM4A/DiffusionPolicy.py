@@ -102,6 +102,13 @@ class DiffusionPolicy(baseframework):
         super().__init__()
         self.config = merge_framework_config(DiffusionPolicyDefaultConfig, config)
         framework_config = self.config.framework
+        augmentation = framework_config.get("augmentation", {})
+        self._augmentation_enabled = bool(augmentation.get("enabled", False))
+        self._augmentation_probability = float(augmentation.get("p", 1.0))
+        self._augmentation_brightness = float(augmentation.get("brightness", 0.0))
+        self._augmentation_contrast = float(augmentation.get("contrast", 0.0))
+        self._augmentation_saturation = float(augmentation.get("saturation", 0.0))
+        self._augmentation_noise_std = float(augmentation.get("noise_std", 0.0))
         shape_meta = _build_shape_meta(framework_config)
         obs_encoder = MultiImageObsEncoder(
             shape_meta=shape_meta,
@@ -143,6 +150,20 @@ class DiffusionPolicy(baseframework):
         self._set_identity_normalizers()
         ema_model = copy.deepcopy(self.action_model)
         self._ema = EMAModel(model=ema_model)
+
+    def _apply_c42_augmentation(self, seq: torch.Tensor, params: tuple[float, float, float, float] | None) -> torch.Tensor:
+        """Apply C42's synchronized photometric jitter; never alter geometry."""
+        if params is None:
+            return seq
+        brightness_delta, contrast_factor, saturation_factor, noise_std = params
+        x = seq + brightness_delta
+        mean = x.mean(dim=(-2, -1), keepdim=True)
+        x = (x - mean) * contrast_factor + mean
+        gray = x.mean(dim=-3, keepdim=True)
+        x = (x - gray) * saturation_factor + gray
+        if noise_std > 0.0:
+            x = x + torch.randn_like(x) * noise_std
+        return x.clamp_(0.0, 1.0)
 
     # Checkpoint key prefix for EMA weights. Saving and loading must share this value so old
     # checkpoint detection continues to work.
@@ -333,11 +354,22 @@ class DiffusionPolicy(baseframework):
         model_dtype = model_param.dtype
 
         obs_dict = {}
+        augmentation_params = [None] * len(examples)
+        if self.training and self._augmentation_enabled:
+            for example_idx in range(len(examples)):
+                if self._augmentation_probability < 1.0 and torch.rand((), device=device) > self._augmentation_probability:
+                    continue
+                brightness_delta = float((torch.rand((), device=device) * 2.0 - 1.0) * self._augmentation_brightness)
+                contrast_factor = 1.0 + float((torch.rand((), device=device) * 2.0 - 1.0) * self._augmentation_contrast)
+                saturation_factor = 1.0 + float((torch.rand((), device=device) * 2.0 - 1.0) * self._augmentation_saturation)
+                augmentation_params[example_idx] = (
+                    brightness_delta, contrast_factor, saturation_factor, self._augmentation_noise_std
+                )
 
         # Convention: example["image"][i] is paired with framework.image_keys[i].
         for view_idx, image_key in enumerate(image_keys):
             image_sequences = []
-            for example in examples:
+            for example_idx, example in enumerate(examples):
                 try:
                     image_source = example["image"][view_idx]
                 except (IndexError, TypeError) as exc:
@@ -376,6 +408,7 @@ class DiffusionPolicy(baseframework):
                         .div_(255.0)
                         .to(model_dtype)
                     )
+                    seq = self._apply_c42_augmentation(seq, augmentation_params[example_idx])
                     image_sequences.append(seq)
                 else:
                     frame_tensors = []
@@ -391,6 +424,9 @@ class DiffusionPolicy(baseframework):
                             .permute(2, 0, 1)
                             .to(device=device, dtype=model_dtype)
                         )
+                        image_tensor = self._apply_c42_augmentation(
+                            image_tensor.unsqueeze(0), augmentation_params[example_idx]
+                        )[0]
                         frame_tensors.append(image_tensor)
                     image_sequences.append(torch.stack(frame_tensors, dim=0))
             obs_dict[image_key] = torch.stack(image_sequences, dim=0)
@@ -442,17 +478,9 @@ class DiffusionPolicy(baseframework):
                     f"DP action must have shape [T, {action_dim}], got {tuple(action_tensor.shape)}"
                 )
             if action_tensor.shape[0] < horizon:
-                # The vendored 1-D U-Net downsamples twice and therefore
-                # requires a 16-step action sequence.  DROID C42 stores a
-                # 15-step control chunk; pad its terminal hold action for the
-                # structural token only.  Deployment can execute the first
-                # 15 predictions, so this never changes the real C42 target.
-                if action_tensor.shape[0] == horizon - 1:
-                    action_tensor = torch.cat([action_tensor, action_tensor[-1:].clone()], dim=0)
-                else:
-                    raise ValueError(
-                        f"DP action horizon must be at least {horizon}, got {action_tensor.shape[0]}"
-                    )
+                raise ValueError(
+                    f"DP action horizon must be at least {horizon}, got {action_tensor.shape[0]}"
+                )
             # Take the immediate prefix (t .. t+horizon-1). Dataloaders whose action window
             # starts at the current step then always train DP on the actions that follow the
             # sampled observation, even if they provide a longer window (e.g. one shared with

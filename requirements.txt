@@ -8,6 +8,7 @@ scipy
 torchvision==0.21.0
 setuptools==80.9.0
 pillow
+imageio>=2.34.0
 tensorboard
 matplotlib
 websocket-client==1.8.0

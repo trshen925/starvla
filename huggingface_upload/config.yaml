@@ -1,0 +1,97 @@
+datasets:
+  vla_data:
+    action_horizon: 16
+    clip_mapping: /mnt/pfs/users/shentingrui/code/robo/video_gen/gen2act/gen2act/metadata/c42_c39_to_raw_droid_mapping.json
+    data_mix: raw_droid_oxe_dp_c42_mapping
+    dataset_py: raw_droid_oxe_dp
+    decoded_frame_cache_block_frames: 32
+    decoded_frame_cache_mb: 256
+    episode_local_sampler: true
+    max_samples: null
+    num_workers: 4
+    obs_image_size:
+    - 224
+    - 224
+    parquet_cache_size: 32
+    per_device_batch_size: 16
+    persistent_workers: true
+    pin_memory: true
+    prefetch_factor: 4
+    root: /mnt/pfs/data/fenghaoran/droid/decompressed/1.0.1
+    shuffle: true
+    state_bounds:
+      gripper_max:
+      - 1.0
+      gripper_min:
+      - 0.0
+      position_max:
+      - 0.8506479263305664
+      - 0.5075082778930664
+      - 0.8757533431053162
+      position_min:
+      - 0.247230663895607
+      - -0.568376362323761
+      - -0.16521209478378296
+framework:
+  action_dim: 7
+  augmentation:
+    brightness: 0.1
+    contrast: 0.1
+    enabled: true
+    noise_std: 0.01
+    p: 1.0
+    saturation: 0.05
+  cond_predict_scale: true
+  diffusion_step_embed_dim: 128
+  down_dims:
+  - 128
+  - 256
+  - 512
+  horizon: 16
+  image_keys:
+  - exterior_image_1
+  - exterior_image_2
+  - wrist_image
+  image_size:
+  - 224
+  - 224
+  kernel_size: 5
+  n_action_steps: 8
+  n_groups: 8
+  n_obs_steps: 1
+  name: DiffusionPolicy
+  num_inference_steps: 10
+  num_train_timesteps: 100
+  obs_as_global_cond: true
+  pretrained_backbone: true
+  state_dim: 10
+output_dir: results/Checkpoints/diffusion_policy_oxe_droid_c42_mapping_20ep
+run_id: diffusion_policy_oxe_droid_c42_mapping_20ep
+run_root_dir: results/Checkpoints
+seed: 42
+trainer:
+  eval_interval: 10000
+  eval_num_episodes: 10
+  freeze_modules: ''
+  gradient_clipping: 1.0
+  is_resume: true
+  keep_last_checkpoints: 2
+  learning_rate:
+    action_model: 0.0001
+    base: 0.0001
+  logging_frequency: 10
+  lr_scheduler_type: cosine_with_min_lr
+  max_train_steps: 174940
+  num_warmup_steps: 875
+  optimizer:
+    betas:
+    - 0.9
+    - 0.95
+    eps: 1.0e-08
+    weight_decay: 1.0e-06
+  save_format: pt
+  save_interval: 1000
+  scheduler_specific_kwargs:
+    min_lr: 1.0e-05
+wandb_entity: trshen925-peking-university
+wandb_project: starvla_droid
