@@ -113,3 +113,10 @@ def build_dataloader(cfg, dataset_py="lerobot_datasets_oxe"): # TODO now here on
         vlm_train_dataloader = vlm_data_module["train_dataloader"]
         
         return vlm_train_dataloader
+    elif dataset_py == "hdf5_mixed_posttrain":
+        from starVLA.dataloader.hdf5_mixed_posttrain import build_dataset, collate_fn
+        c = cfg.datasets.vla_data; ds = build_dataset(c, mode="train"); n = int(c.get("num_workers", 4))
+        kw = {"batch_size": int(c.per_device_batch_size), "collate_fn": collate_fn, "num_workers": n, "pin_memory": bool(c.get("pin_memory", True))}
+        if n > 0:
+            kw["persistent_workers"] = bool(c.get("persistent_workers", True)); kw["prefetch_factor"] = int(c.get("prefetch_factor", 2))
+        return DataLoader(ds, shuffle=True, **kw)

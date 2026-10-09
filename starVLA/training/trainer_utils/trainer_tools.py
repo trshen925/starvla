@@ -296,9 +296,21 @@ class TrainerUtils:
                     print(f"❌ cannot find module path: {path}")
         else:  # full load
             try:
-                model.load_state_dict(checkpoint, strict=False)
+                # A new task can legitimately change the action/state width
+                # (for example, DROID's 8-D head versus this dataset's 7-D
+                # head).  Keep all compatible VLM/backbone weights and leave
+                # incompatible output layers freshly initialized.
+                current = model.state_dict()
+                compatible = {
+                    k: v for k, v in checkpoint.items()
+                    if k in current and tuple(v.shape) == tuple(current[k].shape)
+                }
+                skipped = [k for k in checkpoint if k not in compatible]
+                model.load_state_dict(compatible, strict=False)
                 if _dist_rank() == 0:
-                    print("✅ loaded <full_model> model parameters")
+                    print(f"✅ loaded <full_model> model parameters ({len(compatible)} tensors)")
+                    if skipped:
+                        print(f"ℹ️ skipped {len(skipped)} incompatible/missing tensors (new task head likely changed shape)")
                 loaded_modules = ["<full_model>"]
             except Exception as e:
                 raise RuntimeError(f"❌ loading full model failed: {e}")

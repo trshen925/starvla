@@ -55,7 +55,7 @@ from starVLA.training.trainer_utils.trainer_tools import TrainerUtils, build_par
 deepspeed_plugin = DeepSpeedPlugin() if importlib.util.find_spec("deepspeed") else None
 # Some lightweight policies conditionally bypass small parameter branches.
 # DDP must explicitly tolerate these unused parameters between iterations.
-ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=True)
+ddp_kwargs = DistributedDataParallelKwargs(find_unused_parameters=False)
 accelerator = Accelerator(deepspeed_plugin=deepspeed_plugin, kwargs_handlers=[ddp_kwargs])
 accelerator.print(accelerator.state)
 

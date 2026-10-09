@@ -1,0 +1,81 @@
+run_id: minicpm_gr00t_bottle_on_coaster_30k
+run_root_dir: /mnt/pfs/users/shentingrui/code/robo/video_gen/gen2act/starvla_droid/starVLA/results/Checkpoints
+seed: 42
+is_debug: false
+
+framework:
+  name: MiniCPMGR00T
+  qwenvl:
+    base_vlm: /mnt/pfs/users/shentingrui/code/robo/video_gen/gen2act/starVLA/playground/Pretrained_models/MiniCPM-V-4.6
+    attn_implementation: sdpa
+    enable_gradient_checkpointing: false
+  action_model:
+    action_dim: 7
+    state_dim: 7
+    action_horizon: 15
+    action_model_type: DiT-B
+    hidden_size: 1024
+    max_seq_len: 1024
+    num_target_vision_tokens: 32
+    add_pos_embed: true
+    noise_beta_alpha: 1.5
+    noise_beta_beta: 1.0
+    noise_s: 0.999
+    num_inference_timesteps: 4
+    repeated_diffusion_steps: 2
+    num_timestep_buckets: 1000
+    diffusion_model_cfg:
+      cross_attention_dim: 1024
+      dropout: 0.1
+      final_dropout: true
+      interleave_self_attention: true
+      norm_type: ada_norm
+      num_layers: 12
+      output_dim: 1024
+      positional_embeddings: null
+
+datasets:
+  vla_data:
+    data_mix: bottle_on_coaster50
+    dataset_py: hdf5_mixed_posttrain
+    roots:
+      - /mnt/pfs/users/shentingrui/code/robo/video_gen/gen2act/data/BottleOnCoaster50/train
+    instruction: Pick up the yellow bottle and place it on the white coaster.
+    obs_image_size: [448, 448]
+    action_horizon: 15
+    old_demo_limit: 1000
+    new_demo_limit: 1000
+    normalize_actions_states: true
+    action_q01: [-0.3613356351852417, 1.470934271812439, -1.26558354139328, 5.53781226699357e-06, 1.0879346132278442, -2.094399929046631, 0.035999998450279236]
+    action_q99: [0.44349610805511475, 1.7164784669876099, -0.9788956046104431, 8.751851055421866e-06, 1.2200000286102295, 1.6162325143814087, 0.07000000029802322]
+    state_q01: [-0.36133572459220886, 1.4715265536308288, -1.2655646800994873, -9.702026407467202e-05, 1.0879393362998962, -2.094399929046631, 0.057648094296455385]
+    state_q99: [0.44349613785743713, 1.7163484239578246, -0.9790632438659668, 0.0001222166593652217, 1.2200008702278138, 1.616232283115387, 0.0700000748038292]
+    per_device_batch_size: 8
+    num_workers: 4
+    persistent_workers: true
+    prefetch_factor: 4
+    pin_memory: true
+    shuffle: true
+
+trainer:
+  pretrained_checkpoint: /mnt/pfs/users/shentingrui/code/robo/video_gen/gen2act/starvla_droid/starVLA/results/Checkpoints/minicpm_gr00t_4tasks_sauce_banana_rubiks_mustard_20k/final_model/pytorch_model.pt
+  is_resume: false
+  max_train_steps: 30000
+  save_interval: 5000
+  keep_last_checkpoints: 2
+  save_format: pt
+  logging_frequency: 10
+  eval_interval: 1000
+  learning_rate:
+    base: 1.0e-5
+    action_model: 5.0e-5
+    qwen_vl_interface: 5.0e-7
+  num_warmup_steps: 1500
+  lr_scheduler_type: cosine
+  scheduler_specific_kwargs: {}
+  optimizer:
+    betas: [0.9, 0.95]
+    eps: 1.0e-8
+    weight_decay: 1.0e-6
+  gradient_clipping: 1.0
+  freeze_modules: ''
